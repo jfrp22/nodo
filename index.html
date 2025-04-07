@@ -1,113 +1,236 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Control de Nodos IoT</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Permissions-Policy" content="interest-cohort=()">
+    <title>Nodos IoT Conectados</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .master { background-color: #d4edda; }
-        .slave { background-color: #f8d7da; }
-        button { margin: 2px; }
+        /* Mantén todos tus estilos CSS existentes */
+        /* Añade solo estos nuevos */
+        .master-badge {
+            background-color: #4361ee;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .slave-badge {
+            background-color: #6c757d;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .action-btn {
+            background: #4361ee;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            margin: 2px;
+            transition: all 0.3s;
+        }
+        .action-btn:hover {
+            background: #3a56d4;
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body>
-    <h1>Control de Nodos IoT</h1>
-    <div id="status">Conectando al broker MQTT...</div>
-    <table id="nodesTable">
-        <thead>
-            <tr>
-                <th>ID del Nodo</th>
-                <th>Tipo</th>
-                <th>Último Valor</th>
-                <th>Última Actualización</th>
-                <th>Acciones</th>
-            </tr>
-        </thead>
-        <tbody id="nodesBody">
-        </tbody>
-    </table>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-microchip"></i> Nodos IoT Conectados</h1>
+        </header>
+        
+        <nav>
+            <a href="main.html"><i class="fas fa-home"></i> Inicio</a>
+            <a href="dispositivos.html" class="active"><i class="fas fa-list"></i> Nodos</a>
+            <a href="about.html"><i class="fas fa-info-circle"></i> Acerca de</a>
+        </nav>
+        
+        <div class="table-container">
+            <table id="devices">
+                <thead>
+                    <tr>
+                        <th>MAC Address</th>
+                        <th>Tipo</th>
+                        <th>Estado</th>
+                        <th>Valor</th>
+                        <th>Última Actividad</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Los datos se llenarán con JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="connection-status" style="text-align: center; margin-top: 10px; padding: 8px; border-radius: 5px; background: #f0f0f0;">
+            <i class="fas fa-plug"></i> Conectando al servidor MQTT...
+        </div>
+    </div>
 
     <script>
-        const client = new Paho.MQTT.Client("test.mosquitto.org", 8080, "webClient_" + Math.random().toString(16).substr(2, 8));
-        const topicStatus = "iotlab/nodes/status";
-        const topicConfig = "iotlab/nodes/config";
-        
-        let nodes = {};
-        
-        client.onConnectionLost = (responseObject) => {
-            if (responseObject.errorCode !== 0) {
-                updateStatus("Conexión perdida: " + responseObject.errorMessage);
-            }
+        const devices = {}; // Almacena los dispositivos { mac: { lastSeen, status, type, value } }
+        const statusElement = document.getElementById('connection-status');
+
+        // Configuración MQTT
+        const options = {
+            keepalive: 60,
+            clean: true,
+            reconnectPeriod: 1000,
+            connectTimeout: 30 * 1000,
+            clientId: 'webclient_' + Math.random().toString(16).substr(2, 8)
         };
-        
-        client.onMessageArrived = (message) => {
-            if (message.destinationName === topicStatus) {
-                const [nodeId, nodeType, value] = message.payloadString.split(":");
-                nodes[nodeId] = {
-                    type: nodeType,
-                    value: value,
-                    lastUpdate: new Date().toLocaleTimeString()
-                };
-                updateTable();
-            }
-        };
-        
-        function updateStatus(text) {
-            document.getElementById("status").textContent = text;
-        }
-        
-        function updateTable() {
-            const tbody = document.getElementById("nodesBody");
-            tbody.innerHTML = "";
+
+        const client = mqtt.connect("wss://test.mosquitto.org:8081/mqtt", options);
+
+        // Manejo de conexión
+        client.on('connect', () => {
+            console.log("Conectado al broker MQTT");
+            statusElement.innerHTML = '<i class="fas fa-plug"></i> Conectado al servidor MQTT';
+            statusElement.style.background = '#d4edda';
+            statusElement.style.color = '#155724';
             
-            Object.keys(nodes).forEach(nodeId => {
-                const node = nodes[nodeId];
-                const row = document.createElement("tr");
-                row.className = node.type === "MASTER" ? "master" : "slave";
+            // Suscribirse al topic donde los ESP8266 publican los datos
+            client.subscribe("iotlab/nodes/status", { qos: 1 });
+        });
+
+        client.on('error', (err) => {
+            console.error("Error MQTT:", err);
+            statusElement.innerHTML = '<i class="fas fa-plug"></i> Error de conexión MQTT';
+            statusElement.style.background = '#f8d7da';
+            statusElement.style.color = '#721c24';
+        });
+
+        client.on('reconnect', () => {
+            statusElement.innerHTML = '<i class="fas fa-plug"></i> Reconectando...';
+            statusElement.style.background = '#fff3cd';
+            statusElement.style.color = '#856404';
+        });
+
+        // Procesar mensajes
+        client.on('message', (topic, message) => {
+            try {
+                if (topic === "iotlab/nodes/status") {
+                    const data = JSON.parse(message.toString());
+                    const mac = data.mac;
+                    
+                    if (!mac) {
+                        console.error("Mensaje sin identificador MAC");
+                        return;
+                    }
+                    
+                    console.log("Datos recibidos de:", mac, data);
+                    
+                    if (!devices[mac]) {
+                        devices[mac] = { 
+                            lastSeen: new Date(), 
+                            status: data.status || 'online',
+                            type: data.type || 'SLAVE',
+                            value: data.value || 'N/A'
+                        };
+                    } else {
+                        devices[mac].lastSeen = new Date();
+                        devices[mac].status = data.status || 'online';
+                        devices[mac].type = data.type || devices[mac].type;
+                        devices[mac].value = data.value || devices[mac].value;
+                    }
+                    
+                    updateTable();
+                }
+            } catch (e) {
+                console.error("Error al procesar mensaje:", e);
+            }
+        });
+
+        function updateTable() {
+            const tbody = document.querySelector('#devices tbody');
+            tbody.innerHTML = '';
+            
+            // Marcar como offline si no hay señal en 1 minuto
+            const now = new Date();
+            Object.keys(devices).forEach(mac => {
+                if ((now - new Date(devices[mac].lastSeen)) > 60000) {
+                    devices[mac].status = 'offline';
+                }
+            });
+
+            // Ordenar dispositivos por estado (online primero) y luego por MAC
+            const sortedDevices = Object.entries(devices).sort((a, b) => {
+                if (a[1].status === b[1].status) {
+                    return a[0].localeCompare(b[0]);
+                }
+                return a[1].status === 'online' ? -1 : 1;
+            });
+
+            // Generar filas de la tabla
+            sortedDevices.forEach(([mac, deviceData]) => {
+                const row = document.createElement('tr');
                 
                 row.innerHTML = `
-                    <td>${nodeId}</td>
-                    <td>${node.type}</td>
-                    <td>${node.value}</td>
-                    <td>${node.lastUpdate}</td>
+                    <td>${mac}</td>
+                    <td><span class="${deviceData.type.toLowerCase()}-badge">${deviceData.type}</span></td>
+                    <td class="${deviceData.status}">
+                        <i class="fas fa-${deviceData.status === 'online' ? 'check-circle' : 'times-circle'}"></i>
+                        ${deviceData.status.toUpperCase()}
+                    </td>
+                    <td>${deviceData.value}</td>
+                    <td>${deviceData.lastSeen.toLocaleTimeString()}</td>
                     <td>
-                        ${node.type === "SLAVE" ? 
-                          `<button onclick="setMaster('${nodeId}')">Hacer Master</button>` : 
-                          `<button onclick="setSlave('${nodeId}')">Hacer Slave</button>`}
+                        <button onclick="changeRole('${mac}', '${deviceData.type}')" class="action-btn">
+                            ${deviceData.type === 'MASTER' ? 'Hacer SLAVE' : 'Hacer MASTER'}
+                        </button>
                     </td>
                 `;
                 
                 tbody.appendChild(row);
             });
         }
-        
-        function setMaster(nodeId) {
-            const message = new Paho.MQTT.Message(`${nodeId}:MASTER`);
-            message.destinationName = topicConfig;
-            client.send(message);
-            updateStatus(`Configurando nodo ${nodeId} como MASTER`);
+
+        function changeRole(mac, currentRole) {
+            const newRole = currentRole === 'MASTER' ? 'SLAVE' : 'MASTER';
+            const topic = "iotlab/nodes/config";
+            const message = `${mac}:${newRole}`;
+            
+            client.publish(topic, message, { qos: 1 }, (err) => {
+                if (!err) {
+                    alert(`Solicitud enviada para cambiar ${mac} a ${newRole}`);
+                } else {
+                    alert("Error al enviar la solicitud");
+                }
+            });
         }
-        
-        function setSlave(nodeId) {
-            const message = new Paho.MQTT.Message(`${nodeId}:SLAVE`);
-            message.destinationName = topicConfig;
-            client.send(message);
-            updateStatus(`Configurando nodo ${nodeId} como SLAVE`);
-        }
-        
-        // Conectar al broker
-        client.connect({
-            onSuccess: () => {
-                updateStatus("Conectado al broker MQTT. Esperando datos...");
-                client.subscribe(topicStatus);
-            },
-            onFailure: (err) => {
-                updateStatus("Error de conexión: " + err.errorMessage);
+
+        // Verificar dispositivos offline cada 30 segundos
+        setInterval(() => {
+            const now = new Date();
+            let needUpdate = false;
+            
+            Object.keys(devices).forEach(mac => {
+                if ((now - new Date(devices[mac].lastSeen)) > 60000) {
+                    if (devices[mac].status !== 'offline') {
+                        devices[mac].status = 'offline';
+                        needUpdate = true;
+                    }
+                }
+            });
+            
+            if (needUpdate) {
+                updateTable();
             }
-        });
+        }, 30000);
+
+        // Inicializar tabla al cargar
+        window.addEventListener('DOMContentLoaded', updateTable);
     </script>
 </body>
 </html>
