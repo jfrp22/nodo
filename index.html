@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Control de Nodos IoT</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .master { background-color: #d4edda; }
+        .slave { background-color: #f8d7da; }
+        button { margin: 2px; }
+    </style>
+</head>
+<body>
+    <h1>Control de Nodos IoT</h1>
+    <div id="status">Conectando al broker MQTT...</div>
+    <table id="nodesTable">
+        <thead>
+            <tr>
+                <th>ID del Nodo</th>
+                <th>Tipo</th>
+                <th>Último Valor</th>
+                <th>Última Actualización</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="nodesBody">
+        </tbody>
+    </table>
+
+    <script>
+        const client = new Paho.MQTT.Client("test.mosquitto.org", 8080, "webClient_" + Math.random().toString(16).substr(2, 8));
+        const topicStatus = "iotlab/nodes/status";
+        const topicConfig = "iotlab/nodes/config";
+        
+        let nodes = {};
+        
+        client.onConnectionLost = (responseObject) => {
+            if (responseObject.errorCode !== 0) {
+                updateStatus("Conexión perdida: " + responseObject.errorMessage);
+            }
+        };
+        
+        client.onMessageArrived = (message) => {
+            if (message.destinationName === topicStatus) {
+                const [nodeId, nodeType, value] = message.payloadString.split(":");
+                nodes[nodeId] = {
+                    type: nodeType,
+                    value: value,
+                    lastUpdate: new Date().toLocaleTimeString()
+                };
+                updateTable();
+            }
+        };
+        
+        function updateStatus(text) {
+            document.getElementById("status").textContent = text;
+        }
+        
+        function updateTable() {
+            const tbody = document.getElementById("nodesBody");
+            tbody.innerHTML = "";
+            
+            Object.keys(nodes).forEach(nodeId => {
+                const node = nodes[nodeId];
+                const row = document.createElement("tr");
+                row.className = node.type === "MASTER" ? "master" : "slave";
+                
+                row.innerHTML = `
+                    <td>${nodeId}</td>
+                    <td>${node.type}</td>
+                    <td>${node.value}</td>
+                    <td>${node.lastUpdate}</td>
+                    <td>
+                        ${node.type === "SLAVE" ? 
+                          `<button onclick="setMaster('${nodeId}')">Hacer Master</button>` : 
+                          `<button onclick="setSlave('${nodeId}')">Hacer Slave</button>`}
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        function setMaster(nodeId) {
+            const message = new Paho.MQTT.Message(`${nodeId}:MASTER`);
+            message.destinationName = topicConfig;
+            client.send(message);
+            updateStatus(`Configurando nodo ${nodeId} como MASTER`);
+        }
+        
+        function setSlave(nodeId) {
+            const message = new Paho.MQTT.Message(`${nodeId}:SLAVE`);
+            message.destinationName = topicConfig;
+            client.send(message);
+            updateStatus(`Configurando nodo ${nodeId} como SLAVE`);
+        }
+        
+        // Conectar al broker
+        client.connect({
+            onSuccess: () => {
+                updateStatus("Conectado al broker MQTT. Esperando datos...");
+                client.subscribe(topicStatus);
+            },
+            onFailure: (err) => {
+                updateStatus("Error de conexión: " + err.errorMessage);
+            }
+        });
+    </script>
+</body>
+</html>
