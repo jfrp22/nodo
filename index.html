@@ -13,6 +13,7 @@
             --success: #28a745;
             --danger: #dc3545;
             --warning: #ffc107;
+            --info: #17a2b8;
             --light: #f8f9fa;
             --dark: #212529;
         }
@@ -251,6 +252,35 @@
             font-size: 14px;
         }
         
+        .data-alert {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            border-left: 4px solid var(--primary);
+            z-index: 1000;
+            animation: slideIn 0.5s forwards;
+            max-width: 300px;
+        }
+        
+        .data-alert .close {
+            float: right;
+            cursor: pointer;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        
+        .sensor-value {
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -259,6 +289,11 @@
             th, td {
                 padding: 8px 10px;
                 font-size: 14px;
+            }
+            
+            .data-alert {
+                max-width: 90%;
+                right: 5%;
             }
         }
     </style>
@@ -282,6 +317,7 @@
                         <th>Estado</th>
                         <th>Emparejado con</th>
                         <th>Dirección IP</th>
+                        <th>Último Valor</th>
                         <th>Última Actualización</th>
                         <th>Acciones</th>
                     </tr>
@@ -353,6 +389,7 @@
             // Suscribirse a los topics necesarios
             client.subscribe("iotlab/nodes/status", { qos: 1 });
             client.subscribe("iotlab/pairing/response", { qos: 1 });
+            client.subscribe("iotlab/node_data", { qos: 1 });
             
             // Publicar mensaje de descubrimiento
             client.publish("iotlab/discovery", "DISCOVER_NODES", { qos: 1 });
@@ -396,7 +433,27 @@
                             paired_with: data.slave_mac,
                             status: "active"
                         });
-                        alert(`Emparejamiento exitoso: ${data.slave_mac} ↔ ${data.master_mac}`);
+                        showDataAlert({
+                            type: "emparejamiento",
+                            message: `Emparejamiento exitoso: ${data.slave_mac} ↔ ${data.master_mac}`
+                        });
+                    }
+                }
+                
+                if (topic === "iotlab/node_data") {
+                    if (devices[data.from]) {
+                        devices[data.from].lastValue = {
+                            type: data.type,
+                            value: data.value,
+                            timestamp: data.timestamp
+                        };
+                        updateTable();
+                        showDataAlert({
+                            type: "dato",
+                            from: data.from,
+                            value: data.value,
+                            unit: data.type === "temperature" ? "°C" : ""
+                        });
                     }
                 }
             } catch (e) {
@@ -431,7 +488,9 @@
                     role: data.role || 'UNCONFIGURED',
                     status: data.status || 'offline',
                     paired_with: data.paired_with || '',
-                    ip: data.ip || 'N/A'
+                    ip: data.ip || 'N/A',
+                    rssi: data.rssi || 0,
+                    lastValue: null
                 };
             } else {
                 devices[data.mac].lastSeen = now;
@@ -439,6 +498,7 @@
                 if (data.status) devices[data.mac].status = data.status;
                 if (data.paired_with !== undefined) devices[data.mac].paired_with = data.paired_with;
                 if (data.ip) devices[data.mac].ip = data.ip;
+                if (data.rssi) devices[data.mac].rssi = data.rssi;
             }
             
             updateTable();
@@ -479,6 +539,9 @@
                     </span></td>
                     <td>${device.paired_with || 'Ninguno'}</td>
                     <td>${device.ip}</td>
+                    <td class="sensor-value">
+                        ${device.lastValue ? `${device.lastValue.value} ${device.lastValue.type === 'temperature' ? '°C' : ''}` : 'N/A'}
+                    </td>
                     <td>${device.lastSeen.toLocaleTimeString()}</td>
                     <td>
                         <button class="btn btn-primary btn-sm" onclick="showConfigModal('${mac}')">
@@ -569,15 +632,57 @@
             }
             
             console.log("Enviando configuración:", config);
-            client.publish('iotlab/nodes/config', JSON.stringify(config), { qos: 1 });
+            client.publish('iotlab/nodes/config', JSON.stringify(config), { qos: 1 }, (err) => {
+                if (err) {
+                    console.error("Error al enviar configuración:", err);
+                    alert("Error al enviar configuración");
+                } else {
+                    console.log("Configuración enviada correctamente");
+                }
+            });
             
             hideModal();
         }
         
         // Función para descubrir nodos
         function discoverNodes() {
-            client.publish('iotlab/discovery', 'DISCOVER_NODES', { qos: 1 });
-            alert("Solicitud de descubrimiento enviada");
+            client.publish('iotlab/discovery', 'DISCOVER_NODES', { qos: 1 }, (err) => {
+                if (err) {
+                    console.error("Error al enviar solicitud de descubrimiento:", err);
+                } else {
+                    console.log("Solicitud de descubrimiento enviada correctamente");
+                    alert("Buscando nodos...");
+                }
+            });
+        }
+        
+        // Mostrar notificación de datos
+        function showDataAlert(data) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'data-alert';
+            
+            if (data.type === "emparejamiento") {
+                alertDiv.innerHTML = `
+                    <span class="close" onclick="this.parentElement.remove()">&times;</span>
+                    <strong>Emparejamiento exitoso</strong>
+                    <p>${data.message}</p>
+                `;
+            } else {
+                alertDiv.innerHTML = `
+                    <span class="close" onclick="this.parentElement.remove()">&times;</span>
+                    <strong>Dato recibido de ${data.from}</strong>
+                    <p>Valor: ${data.value} ${data.unit || ''}</p>
+                    <small>${new Date().toLocaleTimeString()}</small>
+                `;
+            }
+            
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
         }
         
         // Inicializar
