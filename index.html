@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Permissions-Policy" content="interest-cohort=()">
     <title>Control de Nodos IoT</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
@@ -11,12 +10,11 @@
         :root {
             --primary: #4361ee;
             --secondary: #3f37c9;
-            --light: #f8f9fa;
-            --dark: #212529;
             --success: #28a745;
             --danger: #dc3545;
             --warning: #ffc107;
-            --info: #17a2b8;
+            --light: #f8f9fa;
+            --dark: #212529;
         }
         
         * {
@@ -28,9 +26,8 @@
         
         body {
             background-color: #f5f7fa;
-            color: #333;
-            line-height: 1.6;
             padding: 20px;
+            color: #333;
         }
         
         .container {
@@ -38,13 +35,13 @@
             margin: 0 auto;
             background: white;
             border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
             padding: 20px;
         }
         
         header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
             padding-bottom: 20px;
             border-bottom: 1px solid #eee;
         }
@@ -82,9 +79,9 @@
         
         .table-container {
             overflow-x: auto;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
             border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
         }
         
         table {
@@ -96,7 +93,7 @@
         th, td {
             padding: 12px 15px;
             text-align: left;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid #eee;
         }
         
         th {
@@ -104,7 +101,6 @@
             color: white;
             position: sticky;
             top: 0;
-            font-weight: 600;
         }
         
         tr:hover {
@@ -188,7 +184,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
+            background-color: rgba(0,0,0,0.5);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -206,11 +202,9 @@
         .modal-content {
             background-color: white;
             border-radius: 8px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
             width: 90%;
             max-width: 500px;
-            max-height: 90vh;
-            overflow-y: auto;
             transform: translateY(-20px);
             transition: all 0.3s;
         }
@@ -266,11 +260,6 @@
                 padding: 8px 10px;
                 font-size: 14px;
             }
-            
-            .btn {
-                padding: 6px 10px;
-                font-size: 13px;
-            }
         }
     </style>
 </head>
@@ -323,7 +312,7 @@
                     </select>
                 </div>
                 <div class="form-group" id="pairing-group" style="display: none;">
-                    <label for="pair-device">Emparejar con:</label>
+                    <label for="pair-device">Emparejar con Maestro:</label>
                     <select id="pair-device" class="form-control">
                         <!-- Las opciones se llenarán dinámicamente -->
                     </select>
@@ -344,8 +333,7 @@
             clientId: 'webclient_' + Math.random().toString(16).substr(2, 8),
             keepalive: 60,
             clean: true,
-            reconnectPeriod: 1000,
-            connectTimeout: 5000
+            reconnectPeriod: 1000
         });
         
         // Elementos del DOM
@@ -362,7 +350,7 @@
             console.log("Conectado al broker MQTT");
             updateConnectionStatus('connected', 'Conectado al servidor MQTT');
             
-            // Suscripciones con QoS 1 para mayor confiabilidad
+            // Suscribirse a los topics necesarios
             client.subscribe("iotlab/nodes/status", { qos: 1 });
             client.subscribe("iotlab/pairing/response", { qos: 1 });
             
@@ -408,6 +396,7 @@
                             paired_with: data.slave_mac,
                             status: "active"
                         });
+                        alert(`Emparejamiento exitoso: ${data.slave_mac} ↔ ${data.master_mac}`);
                     }
                 }
             } catch (e) {
@@ -444,7 +433,6 @@
                     paired_with: data.paired_with || '',
                     ip: data.ip || 'N/A'
                 };
-                console.log(`Nuevo nodo detectado: ${data.mac}`);
             } else {
                 devices[data.mac].lastSeen = now;
                 if (data.role) devices[data.mac].role = data.role;
@@ -514,9 +502,6 @@
             // Actualizar opciones de emparejamiento
             updatePairingOptions();
             
-            // Mostrar grupo de emparejamiento si el rol no es UNCONFIGURED
-            pairingGroup.style.display = device.role !== 'UNCONFIGURED' ? 'block' : 'none';
-            
             configModal.classList.add('show');
         }
         
@@ -526,57 +511,44 @@
             currentEditingNode = null;
         }
         
-        // Actualizar opciones de emparejamiento según el rol seleccionado
+        // Actualizar opciones de emparejamiento
         function updatePairingOptions() {
             const selectedRole = nodeRoleSelect.value;
             pairDeviceSelect.innerHTML = '';
             pairingGroup.style.display = 'none';
             
-            if (selectedRole === 'UNCONFIGURED') return;
-            
-            // Obtener dispositivos disponibles para emparejar
-            let availableDevices = [];
-            
-            if (selectedRole === 'MASTER') {
-                availableDevices = Object.entries(devices)
-                    .filter(([mac, device]) => 
-                        device.role === 'SLAVE' && 
-                        device.status === 'active' && 
-                        (device.paired_with === '' || device.paired_with === currentEditingNode)
-                    )
-                    .map(([mac]) => mac);
-            } 
-            else if (selectedRole === 'SLAVE') {
-                availableDevices = Object.entries(devices)
+            // Solo mostrar opciones de emparejamiento para esclavos
+            if (selectedRole === 'SLAVE') {
+                pairingGroup.style.display = 'block';
+                
+                // Obtener maestros disponibles
+                const availableMasters = Object.entries(devices)
                     .filter(([mac, device]) => 
                         device.role === 'MASTER' && 
-                        device.status === 'active' && 
-                        mac !== currentEditingNode &&
-                        (device.paired_with === '' || device.paired_with === currentEditingNode)
+                        device.status === 'active' &&
+                        mac !== currentEditingNode
                     )
                     .map(([mac]) => mac);
-            }
-            
-            if (availableDevices.length > 0) {
-                pairingGroup.style.display = 'block';
-                availableDevices.forEach(mac => {
-                    const option = document.createElement('option');
-                    option.value = mac;
-                    option.textContent = mac;
-                    pairDeviceSelect.appendChild(option);
-                });
                 
-                // Seleccionar el dispositivo actualmente emparejado si existe
-                if (devices[currentEditingNode]?.paired_with && 
-                    availableDevices.includes(devices[currentEditingNode].paired_with)) {
-                    pairDeviceSelect.value = devices[currentEditingNode].paired_with;
+                if (availableMasters.length > 0) {
+                    availableMasters.forEach(mac => {
+                        const option = document.createElement('option');
+                        option.value = mac;
+                        option.textContent = mac;
+                        pairDeviceSelect.appendChild(option);
+                    });
+                    
+                    // Seleccionar maestro actual si existe
+                    if (devices[currentEditingNode]?.paired_with) {
+                        pairDeviceSelect.value = devices[currentEditingNode].paired_with;
+                    }
+                } else {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No hay maestros disponibles';
+                    option.disabled = true;
+                    pairDeviceSelect.appendChild(option);
                 }
-            } else {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = 'No hay dispositivos disponibles';
-                option.disabled = true;
-                pairDeviceSelect.appendChild(option);
             }
         }
         
@@ -585,66 +557,32 @@
             if (!currentEditingNode) return;
             
             const role = nodeRoleSelect.value;
-            const pairWith = pairDeviceSelect.value && pairDeviceSelect.value !== '' ? pairDeviceSelect.value : '';
+            const pairWith = role === 'SLAVE' && pairDeviceSelect.value ? pairDeviceSelect.value : '';
             
-            console.log(`Enviando configuración para ${currentEditingNode}: Rol=${role}, Emparejar con=${pairWith || 'Ninguno'}`);
-            sendNodeConfig(currentEditingNode, role, pairWith);
-            hideModal();
-        }
-        
-        // Función para enviar configuración
-        function sendNodeConfig(nodeMac, role, pairWith = "") {
             const config = {
-                target: nodeMac,
-                role: role,
-                timestamp: Date.now()
+                target: currentEditingNode,
+                role: role
             };
             
             if (pairWith) {
                 config.pair_with = pairWith;
             }
-
-            const configStr = JSON.stringify(config);
             
-            client.publish('iotlab/nodes/config', configStr, { qos: 1, retain: false }, (err) => {
-                if (err) {
-                    console.error("Error al enviar configuración:", err);
-                    alert("Error al enviar configuración");
-                } else {
-                    console.log("Configuración enviada correctamente");
-                    alert(`Configuración enviada a ${nodeMac}\nRol: ${role}\n${pairWith ? 'Emparejado con: ' + pairWith : ''}`);
-                }
-            });
+            console.log("Enviando configuración:", config);
+            client.publish('iotlab/nodes/config', JSON.stringify(config), { qos: 1 });
+            
+            hideModal();
         }
         
         // Función para descubrir nodos
         function discoverNodes() {
-            console.log("Enviando solicitud de descubrimiento de nodos");
-            client.publish('iotlab/discovery', 'DISCOVER_NODES', { qos: 1 }, (err) => {
-                if (err) {
-                    console.error("Error al enviar solicitud de descubrimiento:", err);
-                } else {
-                    console.log("Solicitud de descubrimiento enviada correctamente");
-                }
-            });
-        }
-        
-        // Función para verificar conexión
-        function checkConnection() {
-            if (!client.connected) {
-                console.warn("Cliente MQTT no conectado");
-                updateConnectionStatus('disconnected', 'Desconectado - Intentando reconectar...');
-                client.reconnect();
-            }
+            client.publish('iotlab/discovery', 'DISCOVER_NODES', { qos: 1 });
+            alert("Solicitud de descubrimiento enviada");
         }
         
         // Inicializar
         window.addEventListener('DOMContentLoaded', () => {
-            console.log("Interfaz de control inicializada");
             updateTable();
-            
-            // Verificar conexión periódicamente
-            setInterval(checkConnection, 30000);
             
             // Verificar nodos offline cada 30 segundos
             setInterval(() => {
