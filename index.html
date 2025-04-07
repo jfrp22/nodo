@@ -257,44 +257,6 @@
             font-size: 14px;
         }
         
-        .log-container {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            max-height: 200px;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 13px;
-        }
-        
-        .log-entry {
-            margin-bottom: 5px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .log-timestamp {
-            color: #6c757d;
-            margin-right: 10px;
-        }
-        
-        .log-info {
-            color: var(--info);
-        }
-        
-        .log-success {
-            color: var(--success);
-        }
-        
-        .log-warning {
-            color: var(--warning);
-        }
-        
-        .log-error {
-            color: var(--danger);
-        }
-        
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -339,13 +301,6 @@
                     <!-- Los nodos se agregarán aquí dinámicamente -->
                 </tbody>
             </table>
-        </div>
-        
-        <div class="log-container">
-            <h3><i class="fas fa-terminal"></i> Registro de Eventos</h3>
-            <div id="event-log">
-                <div class="log-entry"><span class="log-timestamp">[00:00:00]</span> <span class="log-info">Sistema iniciado</span></div>
-            </div>
         </div>
     </div>
     
@@ -401,75 +356,38 @@
         const nodeRoleSelect = document.getElementById('node-role');
         const pairingGroup = document.getElementById('pairing-group');
         const pairDeviceSelect = document.getElementById('pair-device');
-        const eventLog = document.getElementById('event-log');
-        
-        // Función para agregar entradas al log
-        function addLog(message, type = 'info') {
-            const now = new Date();
-            const timestamp = `[${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}]`;
-            
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.innerHTML = `<span class="log-timestamp">${timestamp}</span> <span class="log-${type}">${message}</span>`;
-            
-            eventLog.prepend(logEntry);
-            
-            // Limitar el número de entradas en el log
-            while (eventLog.children.length > 50) {
-                eventLog.removeChild(eventLog.lastChild);
-            }
-        }
         
         // Manejo de conexión MQTT
         client.on('connect', () => {
-            addLog("Conectado al broker MQTT", 'success');
+            console.log("Conectado al broker MQTT");
             updateConnectionStatus('connected', 'Conectado al servidor MQTT');
             
             // Suscripciones con QoS 1 para mayor confiabilidad
-            client.subscribe("iotlab/nodes/status", { qos: 1 }, (err) => {
-                if (err) {
-                    addLog(`Error al suscribirse a iotlab/nodes/status: ${err}`, 'error');
-                } else {
-                    addLog("Suscrito a iotlab/nodes/status", 'success');
-                }
-            });
-            
-            client.subscribe("iotlab/pairing/response", { qos: 1 }, (err) => {
-                if (err) {
-                    addLog(`Error al suscribirse a iotlab/pairing/response: ${err}`, 'error');
-                } else {
-                    addLog("Suscrito a iotlab/pairing/response", 'success');
-                }
-            });
+            client.subscribe("iotlab/nodes/status", { qos: 1 });
+            client.subscribe("iotlab/pairing/response", { qos: 1 });
             
             // Publicar mensaje de descubrimiento
-            client.publish("iotlab/discovery", "DISCOVER_NODES", { qos: 1 }, (err) => {
-                if (err) {
-                    addLog("Error al publicar mensaje de descubrimiento", 'error');
-                } else {
-                    addLog("Mensaje de descubrimiento enviado", 'success');
-                }
-            });
+            client.publish("iotlab/discovery", "DISCOVER_NODES", { qos: 1 });
         });
         
         client.on('error', (err) => {
-            addLog(`Error MQTT: ${err}`, 'error');
+            console.error("Error MQTT:", err);
             updateConnectionStatus('disconnected', 'Error de conexión MQTT');
         });
         
         client.on('reconnect', () => {
-            addLog("Intentando reconectar...", 'warning');
+            console.log("Intentando reconectar...");
             updateConnectionStatus('connecting', 'Reconectando...');
         });
         
         client.on('offline', () => {
-            addLog("Desconectado del broker MQTT", 'error');
+            console.log("Desconectado del broker MQTT");
             updateConnectionStatus('disconnected', 'Desconectado del servidor MQTT');
         });
         
         // Procesar mensajes MQTT
         client.on('message', (topic, message) => {
-            addLog(`Mensaje recibido [${topic}]: ${message.toString()}`, 'info');
+            console.log(`Mensaje recibido [${topic}]:`, message.toString());
             
             try {
                 const data = JSON.parse(message.toString());
@@ -490,11 +408,10 @@
                             paired_with: data.slave_mac,
                             status: "active"
                         });
-                        addLog(`Nodos emparejados: ${data.master_mac} ↔ ${data.slave_mac}`, 'success');
                     }
                 }
             } catch (e) {
-                addLog(`Error al procesar mensaje: ${e}`, 'error');
+                console.error("Error al procesar mensaje:", e);
             }
         });
         
@@ -513,7 +430,7 @@
         // Actualizar/agregar dispositivo
         function updateDevice(data) {
             if (!data.mac) {
-                addLog("Mensaje sin identificador MAC", 'warning');
+                console.warn("Mensaje sin identificador MAC");
                 return;
             }
             
@@ -527,7 +444,7 @@
                     paired_with: data.paired_with || '',
                     ip: data.ip || 'N/A'
                 };
-                addLog(`Nuevo nodo detectado: ${data.mac} (${data.role || 'UNCONFIGURED'})`, 'success');
+                console.log(`Nuevo nodo detectado: ${data.mac}`);
             } else {
                 devices[data.mac].lastSeen = now;
                 if (data.role) devices[data.mac].role = data.role;
@@ -601,7 +518,6 @@
             pairingGroup.style.display = device.role !== 'UNCONFIGURED' ? 'block' : 'none';
             
             configModal.classList.add('show');
-            addLog(`Mostrando configuración para nodo: ${nodeMac}`, 'info');
         }
         
         // Ocultar modal
@@ -671,7 +587,7 @@
             const role = nodeRoleSelect.value;
             const pairWith = pairDeviceSelect.value && pairDeviceSelect.value !== '' ? pairDeviceSelect.value : '';
             
-            addLog(`Enviando configuración para ${currentEditingNode}: Rol=${role}, Emparejar con=${pairWith || 'Ninguno'}`, 'info');
+            console.log(`Enviando configuración para ${currentEditingNode}: Rol=${role}, Emparejar con=${pairWith || 'Ninguno'}`);
             sendNodeConfig(currentEditingNode, role, pairWith);
             hideModal();
         }
@@ -692,10 +608,10 @@
             
             client.publish('iotlab/nodes/config', configStr, { qos: 1, retain: false }, (err) => {
                 if (err) {
-                    addLog(`Error al enviar configuración: ${err}`, 'error');
+                    console.error("Error al enviar configuración:", err);
                     alert("Error al enviar configuración");
                 } else {
-                    addLog(`Configuración enviada correctamente a ${nodeMac}`, 'success');
+                    console.log("Configuración enviada correctamente");
                     alert(`Configuración enviada a ${nodeMac}\nRol: ${role}\n${pairWith ? 'Emparejado con: ' + pairWith : ''}`);
                 }
             });
@@ -703,12 +619,12 @@
         
         // Función para descubrir nodos
         function discoverNodes() {
-            addLog("Enviando solicitud de descubrimiento de nodos", 'info');
+            console.log("Enviando solicitud de descubrimiento de nodos");
             client.publish('iotlab/discovery', 'DISCOVER_NODES', { qos: 1 }, (err) => {
                 if (err) {
-                    addLog("Error al enviar solicitud de descubrimiento", 'error');
+                    console.error("Error al enviar solicitud de descubrimiento:", err);
                 } else {
-                    addLog("Solicitud de descubrimiento enviada correctamente", 'success');
+                    console.log("Solicitud de descubrimiento enviada correctamente");
                 }
             });
         }
@@ -716,7 +632,7 @@
         // Función para verificar conexión
         function checkConnection() {
             if (!client.connected) {
-                addLog("Verificación: Cliente MQTT no conectado", 'warning');
+                console.warn("Cliente MQTT no conectado");
                 updateConnectionStatus('disconnected', 'Desconectado - Intentando reconectar...');
                 client.reconnect();
             }
@@ -724,7 +640,7 @@
         
         // Inicializar
         window.addEventListener('DOMContentLoaded', () => {
-            addLog("Interfaz de control inicializada", 'info');
+            console.log("Interfaz de control inicializada");
             updateTable();
             
             // Verificar conexión periódicamente
@@ -740,7 +656,6 @@
                         if (devices[mac].status !== 'offline') {
                             devices[mac].status = 'offline';
                             needUpdate = true;
-                            addLog(`Nodo marcado como offline: ${mac}`, 'warning');
                         }
                     }
                 });
